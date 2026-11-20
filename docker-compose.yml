@@ -1,0 +1,78 @@
+# ============================================
+# MundoBarrista — Docker Compose
+# ============================================
+# Tres servicios: app (Next.js), postgres, redis
+# Uso: docker compose up -d
+
+services:
+  # --- PostgreSQL 16 ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: mb-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mundobarrista}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mundobarrista_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-mundobarrista}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mb-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-mundobarrista}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Redis 7 ---
+  redis:
+    image: redis:7-alpine
+    container_name: mb-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - mb-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Next.js App ---
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mb-app
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mundobarrista}:${POSTGRES_PASSWORD:-mundobarrista_dev}@postgres:5432/${POSTGRES_DB:-mundobarrista}?schema=public
+      REDIS_URL: redis://redis:6379
+      USE_MOCK_DATA: ${USE_MOCK_DATA:-true}
+      API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      API_FOOTBALL_HOST: ${API_FOOTBALL_HOST:-v3.football.api-sports.io}
+      API_FOOTBALL_LEAGUE_ID: ${API_FOOTBALL_LEAGUE_ID:-239}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mb-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  mb-network:
+    driver: bridge

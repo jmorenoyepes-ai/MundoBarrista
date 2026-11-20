@@ -1,0 +1,248 @@
+// ============================================
+// MundoBarrista — Prisma Schema
+// Liga BetPlay Dimayor
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Modelo: Equipo
+// ============================================
+model Team {
+  id            Int      @id @default(autoincrement())
+  name          String   @unique // "Atlético Nacional"
+  shortName     String   @unique // "NAL"
+  slug          String   @unique // "atletico-nacional"
+  city          String   // "Medellín"
+  stadium       String   // "Estadio Atanasio Girardot"
+  stadiumCapacity Int?   // 40943
+  altitude      Int      // metros sobre el nivel del mar
+  founded       Int?     // 1947
+  primaryColor  String   // "#00843D"
+  secondaryColor String  // "#FFFFFF"
+  logoUrl       String?  // URL del escudo (placeholder por ahora)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relaciones
+  homeMatches   Match[]  @relation("HomeTeam")
+  awayMatches   Match[]  @relation("AwayTeam")
+  standings     Standing[]
+  reclassificationEntries Reclassification[]
+  relegationRecords       RelegationRecord[]
+  matchEvents   MatchEvent[]
+
+  @@map("teams")
+}
+
+// ============================================
+// Modelo: Partido
+// ============================================
+model Match {
+  id            Int         @id @default(autoincrement())
+  season        Int         // 2026
+  phase         MatchPhase  // TODOS_CONTRA_TODOS, CUADRANGULARES, FINAL
+  matchday      Int         // Jornada / Fecha (1-19 en fase regular)
+  dateTime      DateTime    // Fecha y hora del partido (hora Colombia)
+  status        MatchStatus @default(SCHEDULED)
+  minute        Int?        // Minuto actual si está EN VIVO
+  
+  homeTeamId    Int
+  awayTeamId    Int
+  homeTeam      Team        @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam      Team        @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  
+  homeScore     Int         @default(0)
+  awayScore     Int         @default(0)
+  
+  stadium       String?     // Puede diferir del estadio del local
+  city          String?
+  altitude      Int?        // msnm
+  tvChannel     String?     // "Win Sports+" / "Win+ Fútbol"
+  referee       String?
+
+  // Estadísticas del partido
+  stats         MatchStats?
+  events        MatchEvent[]
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([season, phase, matchday])
+  @@index([status])
+  @@index([dateTime])
+  @@map("matches")
+}
+
+enum MatchStatus {
+  SCHEDULED  // Programado
+  LIVE       // En vivo
+  HALFTIME   // Entretiempo
+  FINISHED   // Finalizado
+  POSTPONED  // Aplazado
+  CANCELLED  // Cancelado
+}
+
+enum MatchPhase {
+  TODOS_CONTRA_TODOS  // Fase regular (19 fechas)
+  CUADRANGULARES      // Semifinales (Grupos A y B)
+  FINAL               // Gran Final (ida y vuelta)
+}
+
+// ============================================
+// Modelo: Eventos del Partido
+// ============================================
+model MatchEvent {
+  id          Int           @id @default(autoincrement())
+  matchId     Int
+  match       Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  teamId      Int
+  team        Team          @relation(fields: [teamId], references: [id])
+  minute      Int
+  extraMinute Int?          // Minuto de adición (ej. 45+2)
+  type        EventType
+  playerName  String
+  assistName  String?       // Asistencia en goles
+  detail      String?       // "Penal", "Autogol", "Segunda amarilla", etc.
+  
+  createdAt   DateTime      @default(now())
+
+  @@index([matchId])
+  @@map("match_events")
+}
+
+enum EventType {
+  GOAL
+  OWN_GOAL
+  PENALTY_GOAL
+  PENALTY_MISSED
+  YELLOW_CARD
+  RED_CARD
+  SECOND_YELLOW
+  SUBSTITUTION
+  VAR_DECISION
+}
+
+// ============================================
+// Modelo: Estadísticas del Partido
+// ============================================
+model MatchStats {
+  id                Int   @id @default(autoincrement())
+  matchId           Int   @unique
+  match             Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  // Equipo local
+  homePossession    Float?  // 55.3 (%)
+  homeTotalShots    Int?
+  homeShotsOnTarget Int?
+  homeCorners       Int?
+  homeFouls         Int?
+  homeOffsides      Int?
+  homeYellowCards   Int?
+  homeRedCards      Int?
+  homePasses        Int?
+  homePassAccuracy  Float?  // (%)
+
+  // Equipo visitante
+  awayPossession    Float?
+  awayTotalShots    Int?
+  awayShotsOnTarget Int?
+  awayCorners       Int?
+  awayFouls         Int?
+  awayOffsides      Int?
+  awayYellowCards   Int?
+  awayRedCards      Int?
+  awayPasses        Int?
+  awayPassAccuracy  Float?
+
+  @@map("match_stats")
+}
+
+// ============================================
+// Modelo: Tabla de Posiciones (Todos contra Todos)
+// ============================================
+model Standing {
+  id              Int    @id @default(autoincrement())
+  season          Int    // 2026
+  semester        Int    // 1 = Apertura, 2 = Finalización
+  teamId          Int
+  team            Team   @relation(fields: [teamId], references: [id])
+  
+  position        Int    // Posición en la tabla
+  played          Int    @default(0) // PJ
+  won             Int    @default(0) // PG
+  drawn           Int    @default(0) // PE
+  lost            Int    @default(0) // PP
+  goalsFor        Int    @default(0) // GF
+  goalsAgainst    Int    @default(0) // GC
+  goalDifference  Int    @default(0) // DG
+  points          Int    @default(0) // PTS
+  
+  // Racha últimos 5 partidos: "W,W,D,L,W"
+  lastFive        String @default("")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([season, semester, teamId])
+  @@index([season, semester, position])
+  @@map("standings")
+}
+
+// ============================================
+// Modelo: Tabla de Reclasificación (acumulado anual)
+// ============================================
+model Reclassification {
+  id              Int    @id @default(autoincrement())
+  year            Int    // 2026
+  teamId          Int
+  team            Team   @relation(fields: [teamId], references: [id])
+  
+  position        Int
+  played          Int    @default(0)
+  won             Int    @default(0)
+  drawn           Int    @default(0)
+  lost            Int    @default(0)
+  goalsFor        Int    @default(0)
+  goalsAgainst    Int    @default(0)
+  goalDifference  Int    @default(0)
+  points          Int    @default(0)
+  
+  // Cupos internacionales
+  // LIBERTADORES, SUDAMERICANA, NONE
+  internationalCup String @default("NONE")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([year, teamId])
+  @@index([year, position])
+  @@map("reclassification")
+}
+
+// ============================================
+// Modelo: Tabla del Descenso (Promedio últimos 3 años)
+// ============================================
+model RelegationRecord {
+  id              Int    @id @default(autoincrement())
+  teamId          Int
+  team            Team   @relation(fields: [teamId], references: [id])
+  
+  year            Int    // Año del registro
+  points          Int    @default(0) // Puntos obtenidos ese año
+  played          Int    @default(0) // Partidos jugados ese año
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([teamId, year])
+  @@index([year])
+  @@map("relegation_records")
+}
