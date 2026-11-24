@@ -14,10 +14,12 @@ function createRedisClient(): Redis {
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
   const client = new Redis(redisUrl, {
-    maxRetriesPerRequest: 3,
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
     retryStrategy(times) {
-      const delay = Math.min(times * 200, 2000);
-      return delay;
+      // Si falla 2 veces seguidas, pausa los reintentos para no bloquear
+      if (times > 2) return null;
+      return 1000;
     },
     lazyConnect: true,
   });
